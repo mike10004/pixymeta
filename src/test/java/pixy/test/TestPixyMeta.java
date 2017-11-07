@@ -1,6 +1,7 @@
 package pixy.test;
 
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -9,10 +10,15 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -32,34 +38,54 @@ import pixy.meta.tiff.TiffExif;
 import pixy.meta.xmp.XMP;
 import pixy.image.tiff.FieldType;
 import pixy.image.tiff.TiffTag;
+import pixy.util.FileUtils;
 import pixy.util.MetadataUtils;
 import pixy.string.XMLUtils;
 
+import static org.junit.Assert.assertNotEquals;
+
 public class TestPixyMeta {
+
+	@BeforeClass
+	public static void setJvmVersion() {
+		if ("9".equals(System.getProperty("java.specification.version"))) {
+			System.setProperty("java.specification.version", "1.9");
+		}
+	}
+
+	@Rule
+	public TemporaryFolder temporaryFolder = new TemporaryFolder();
+
 	// Obtain a logger instance
 	private static final Logger LOGGER = LoggerFactory.getLogger(TestPixyMeta.class);
-		
-	public static void main(String[] args) throws IOException {
-		Map<MetadataType, Metadata> metadataMap = Metadata.readMetadata(args[0]);
+
+	private File tmproot() {
+		return temporaryFolder.getRoot();
+	}
+	
+	@org.junit.Test
+	public void transferJpegXmp() throws IOException {
+		File filename = new File("images", "wizard.jpg");
+		Map<MetadataType, Metadata> metadataMap = Metadata.readMetadata(filename);
+		assertNotEquals("metadata", 0, metadataMap.size());
 		LOGGER.info("Start of metadata information:");
 		LOGGER.info("Total number of metadata entries: {}", metadataMap.size());
-		
+
 		int i = 0;
-		for(Map.Entry<MetadataType, Metadata> entry : metadataMap.entrySet()) {
+		for (Map.Entry<MetadataType, Metadata> entry : metadataMap.entrySet()) {
 			LOGGER.info("Metadata entry {} - {}", i, entry.getKey());
 			entry.getValue().showMetadata();
 			i++;
 			LOGGER.info("-----------------------------------------");
 		}
 		LOGGER.info("End of metadata information.");
-	
 		FileInputStream fin = null;
 		FileOutputStream fout = null;
-		
+
 		if(metadataMap.get(MetadataType.XMP) != null) {
 			XMP xmp = (XMP)metadataMap.get(MetadataType.XMP);
 			fin = new FileInputStream("images/1.jpg");
-			fout = new FileOutputStream("1-xmp-inserted.jpg");
+			fout = new FileOutputStream(new File(tmproot(), "1-xmp-inserted.jpg"));
 			JpegXMP jpegXmp = null;
 			if(!xmp.hasExtendedXmp())
 				jpegXmp = new JpegXMP(xmp.getData());
@@ -68,86 +94,127 @@ public class TestPixyMeta {
 				Document extendedXmpDoc = xmp.getExtendedXmpDocument();
 				jpegXmp = new JpegXMP(XMLUtils.serializeToStringLS(xmpDoc, xmpDoc.getDocumentElement()), XMLUtils.serializeToStringLS(extendedXmpDoc));
 			}
-		
+
 			Metadata.insertXMP(fin, fout, jpegXmp);
-			
+
 			fin.close();
 			fout.close();
 		}
-		
-		Metadata.extractThumbnails("images/iptc-envelope.tif", "iptc-envelope");
-	
+
+	}
+
+	@Test
+	public void iptc_envelope_tif() throws IOException {
+		FileInputStream fin;
+		FileOutputStream fout;
+		Metadata.extractThumbnails("images/iptc-envelope.tif", tmproot() + "/iptc-envelope");
+
 		fin = new FileInputStream("images/iptc-envelope.tif");
-		fout = new FileOutputStream("iptc-envelope-iptc-inserted.tif");
-			
+		fout = new FileOutputStream(new File(tmproot(), "iptc-envelope-iptc-inserted.tif"));
+
 		Metadata.insertIPTC(fin, fout, createIPTCDataSet(), true);
-		
+
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/wizard.jpg");
-		fout = new FileOutputStream("wizard-iptc-inserted.jpg");
-		
+	}
+
+	@Test
+	public void wizard_jpg() throws Exception {
+		FileInputStream fin = new FileInputStream("images/wizard.jpg");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "wizard-iptc-inserted.jpg"));
+
 		Metadata.insertIPTC(fin, fout, createIPTCDataSet(), true);
-		
+
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/1.jpg");
-		fout = new FileOutputStream("1-irbthumbnail-inserted.jpg");
+	}
+
+	@Test
+	public void image1_irbthumbnail_inserted() throws Exception {
+		FileInputStream fin = new FileInputStream("images/1.jpg");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "1-irbthumbnail-inserted.jpg"));
 		
 		Metadata.insertIRBThumbnail(fin, fout, createThumbnail("images/1.jpg"));
 		
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/f1.tif");
-		fout = new FileOutputStream("f1-irbthumbnail-inserted.tif");
+	}
+
+	@Test
+	public void f1() throws Exception {
+
+		FileInputStream fin = new FileInputStream("images/f1.tif");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "f1-irbthumbnail-inserted.tif"));
 		
 		Metadata.insertIRBThumbnail(fin, fout, createThumbnail("images/f1.tif"));
 		
 		fin.close();
-		fout.close();		
+		fout.close();
 
-		fin = new FileInputStream("images/exif.tif");
-		fout = new FileOutputStream("exif-exif-inserted.tif");
+	}
+
+	@Test
+	public void exif_exif_inserted() throws Exception {
+		FileInputStream fin = new FileInputStream("images/exif.tif");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "exif-exif-inserted.tif"));
 		
 		Metadata.insertExif(fin, fout, populateExif(TiffExif.class), true);
 		
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/12.jpg");
-		fout = new FileOutputStream("12-exif-inserted.jpg");
+
+	}
+
+	@Test
+	public void image12_insertExif() throws Exception {
+		FileInputStream fin = new FileInputStream("images/12.jpg");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "12-exif-inserted.jpg"));
 
 		Metadata.insertExif(fin, fout, populateExif(JpegExif.class), true);
 		
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/12.jpg");
-		fout = new FileOutputStream("12-metadata-removed.jpg");
+
+	}
+
+	@Test
+	public void image12_removeMetadata() throws Exception {
+		FileInputStream fin = new FileInputStream("images/12.jpg");
+		File outfile = new File(tmproot(), "12-metadata-removed.jpg");
+		FileOutputStream fout = new FileOutputStream(outfile);
 		
 		Metadata.removeMetadata(fin, fout, MetadataType.JPG_JFIF, MetadataType.JPG_ADOBE, MetadataType.IPTC, MetadataType.ICC_PROFILE, MetadataType.XMP, MetadataType.EXIF);
 		
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/12.jpg");
-		fout = new FileOutputStream("12-photoshop-iptc-inserted.jpg");
+		System.out.format("metadata removed from %s%n", outfile);
+	}
+
+	@Test
+	public void image12_jpg() throws Exception {
+		FileInputStream fin = new FileInputStream("images/12.jpg");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "12-photoshop-iptc-inserted.jpg"));
 		
 		Metadata.insertIRB(fin, fout, createPhotoshopIPTC(), true);
 		
 		fin.close();
 		fout.close();
-		
-		fin = new FileInputStream("images/table.jpg");
-		JPEGMeta.extractDepthMap(fin, "table");
+
+	}
+
+	@Test
+	public void table_jpg_depthmap() throws Exception {
+		FileInputStream fin = new FileInputStream("images/table.jpg");
+		JPEGMeta.extractDepthMap(fin, tmproot() + "/table");
 		
 		fin.close();
-		
-		fin = new FileInputStream("images/butterfly.png");
-		fout = new FileOutputStream("comment-inserted.png");
+
+	}
+
+	@Test
+	public void butterfly_jpg() throws Exception {
+		FileInputStream fin = new FileInputStream("images/butterfly.png");
+		FileOutputStream fout = new FileOutputStream(new File(tmproot(), "comment-inserted.png"));
 		
 		Metadata.insertComments(fin, fout, Arrays.asList("Comment1", "Comment2"));
 		
@@ -174,13 +241,7 @@ public class TestPixyMeta {
 	}
 	
 	private static BufferedImage createThumbnail(String filePath) throws IOException {
-		FileInputStream fin = null;
-		try {
-			fin = new FileInputStream(filePath);
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		}
-		
+		FileInputStream fin = new FileInputStream(filePath);
 		BufferedImage thumbnail = MetadataUtils.createThumbnail(fin);
 		
 		fin.close();
